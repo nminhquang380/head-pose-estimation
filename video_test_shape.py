@@ -1,9 +1,13 @@
+import os
 import cv2
 import dlib
 import numpy as np
 from imutils import face_utils
+import pyautogui as pg
 
-face_landmark_path = './shape_predictor_68_face_landmarks.dat'
+
+cwd = os.path.abspath(os.path.dirname(__file__))
+model_path = os.path.abspath(os.path.join(cwd, "shape_predictor_68_face_landmarks.dat"))
 
 K = [6.5308391993466671e+002, 0.0, 3.1950000000000000e+002,
      0.0, 6.5308391993466671e+002, 2.3950000000000000e+002,
@@ -39,8 +43,9 @@ reprojectsrc = np.float32([[10.0, 10.0, 10.0],
 
 line_pairs = [[0, 1], [1, 2], [2, 3], [3, 0],
               [4, 5], [5, 6], [6, 7], [7, 4],
-              [0, 4], [1, 5], [2, 6], [3, 7]]
+            [0, 4], [1, 5], [2, 6], [3, 7]]
 
+H, W = 140, 35
 
 def get_head_pose(shape):
     image_pts = np.float32([shape[17], shape[21], shape[22], shape[26], shape[36],
@@ -51,8 +56,9 @@ def get_head_pose(shape):
 
     reprojectdst, _ = cv2.projectPoints(reprojectsrc, rotation_vec, translation_vec, cam_matrix,
                                         dist_coeffs)
+    
+    reprojectdst = tuple(map(tuple, (reprojectdst.reshape(8, 2))))
 
-    reprojectdst = tuple(map(tuple, reprojectdst.reshape(8, 2)))
 
     # calc euler angle
     rotation_mat, _ = cv2.Rodrigues(rotation_vec)
@@ -61,6 +67,42 @@ def get_head_pose(shape):
 
     return reprojectdst, euler_angle
 
+def center_vector(list):
+    x_start = int((list[1][0] + list[5][0] +list[2][0] +list[6][0]) / 4)
+    y_start = int((list[1][1] + list[5][1] +list[2][1] +list[6][1]) / 4)
+    start = (x_start, y_start)
+    x_end = int((list[0][0] + list[4][0] +list[3][0] +list[7][0]) / 4)
+    y_end = int((list[0][1] + list[4][1] +list[3][1] +list[7][1]) / 4)
+    end = (x_end, y_end)
+    return start, end
+
+'''
+define output to control mouse
+0: center
+1: top
+2: bot
+3: left
+4: right
+'''
+def control_mouse(start, end, step):
+    vector = (end[0]-start[0], end[1]-start[1])
+    h = end[1]-start[1]
+    w = end[0]-start[0]
+    # center do nothing
+    if ((w/4)**2 + h**2) <= 1225:
+        pass
+    # top move up
+    elif h-0.25*w >= 0 and h+0.25*w >= 0:
+        pg.move(0, step)
+    # bot move down
+    elif h-0.25*w <= 0 and h+0.25*w <= 0:
+        pg.move(0, -step)
+    # left move left
+    elif h-0.25*w > 0 and h+0.25*w < 0:
+        pg.move(step, 0)
+    # right move right
+    elif h-0.25*w < 0 and h+0.25*w > 0:
+        pg.move(-step, 0)
 
 def main():
     # return
@@ -69,7 +111,7 @@ def main():
         print("Unable to connect to camera.")
         return
     detector = dlib.get_frontal_face_detector()
-    predictor = dlib.shape_predictor(face_landmark_path)
+    predictor = dlib.shape_predictor(model_path)
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -82,18 +124,36 @@ def main():
 
                 reprojectdst, euler_angle = get_head_pose(shape)
 
-                for (x, y) in shape:
-                    cv2.circle(frame, (x, y), 1, (0, 0, 255), -1)
+                # Visual landmark points of face  
+                # for (x, y) in shape:
+                #     cv2.circle(frame, (x, y), 1, (0, 0, 255), -1)
 
-                for start, end in line_pairs:
-                    cv2.line(frame, reprojectdst[start], reprojectdst[end], (0, 0, 255))
+                # Visual tư thế đầu bằng hình khối
+                # for start, end in line_pairs:
+                    # start_point = tuple(map(int, element.item()) for element in reprojectdst[start])
+                    # end_point = tuple(map(int, element.item()) for element in reprojectdst[end])
+                    # start_point = tuple([int(ele) for ele in reprojectdst[start]])
+                    # end_point = tuple([int(ele) for ele in reprojectdst[end]])
+                    # cv2.line(frame, start_point, end_point, (0, 0, 255))
+                    # cv2.line(frame, reprojectdst[start], reprojectdst[end], (0, 0, 255))
 
-                cv2.putText(frame, "X: " + "{:7.2f}".format(euler_angle[0, 0]), (20, 20), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.75, (0, 0, 0), thickness=2)
-                cv2.putText(frame, "Y: " + "{:7.2f}".format(euler_angle[1, 0]), (20, 50), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.75, (0, 0, 0), thickness=2)
-                cv2.putText(frame, "Z: " + "{:7.2f}".format(euler_angle[2, 0]), (20, 80), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.75, (0, 0, 0), thickness=2)
+                # Visual bằng đường thẳng
+                start, end = center_vector(reprojectdst)
+                cv2.line(frame, start, end, (0, 0, 255))
+                cv2.putText(frame,"x = {:.2f}".format(end[0]-start[0]), (20, 20), cv2.FONT_HERSHEY_SIMPLEX,
+                              0.75, (0, 0, 0))
+                cv2.putText(frame,"y = {:.2f}".format(end[1]-start[1]), (20, 50), cv2.FONT_HERSHEY_SIMPLEX,
+                              0.75, (0, 0, 0))
+
+                #control mouse
+                control_mouse(start, end, 25)
+                # 3D vector
+                # cv2.putText(frame, "X: " + "{:7.2f}".format(euler_angle[0, 0]), (20, 20), cv2.FONT_HERSHEY_SIMPLEX,
+                #             0.75, (0, 0, 0), thickness=2)
+                # cv2.putText(frame, "Y: " + "{:7.2f}".format(euler_angle[1, 0]), (20, 50), cv2.FONT_HERSHEY_SIMPLEX,
+                #             0.75, (0, 0, 0), thickness=2)
+                # cv2.putText(frame, "Z: " + "{:7.2f}".format(euler_angle[2, 0]), (20, 80), cv2.FONT_HERSHEY_SIMPLEX,
+                #             0.75, (0, 0, 0), thickness=2)
 
             cv2.imshow("demo", frame)
 
